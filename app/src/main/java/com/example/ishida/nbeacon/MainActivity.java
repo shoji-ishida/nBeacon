@@ -4,6 +4,12 @@ import android.app.Activity;
 import android.app.ActionBar;
 import android.app.Fragment;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattServer;
+import android.bluetooth.BluetoothGattServerCallback;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
@@ -12,6 +18,7 @@ import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.ParcelUuid;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -45,6 +52,8 @@ public class MainActivity extends Activity {
     private BluetoothAdapter bTAdapter;
     private BluetoothLeAdvertiser bTAdvertiser;
     private AdvertiseCallback advCallback;
+    private BluetoothGattServer gattServer;
+    private BluetoothGattServerCallback gattCallback;
     private boolean isAdvertised = false;
 
     @Override
@@ -63,13 +72,16 @@ public class MainActivity extends Activity {
     @Override
     protected void onStart() {
         super.onStart();
+
         startAdvertise();
+        startGattServer();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
 
+        stopGattServer();
         stopAdvertise();
     }
 
@@ -142,6 +154,39 @@ public class MainActivity extends Activity {
             }
         };
 
+        gattCallback = new BluetoothGattServerCallback() {
+            @Override
+            public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
+                Log.d(TAG, "onConnectionStateChange: status=" + status + "->" + newState);
+            }
+
+            @Override
+            public void onServiceAdded(int status, BluetoothGattService service) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    appendStatus("onServiceAdded: status=GATT_SUCCESS service="
+                            + service.getUuid().toString());
+                    Log.d(TAG, "onServiceAdded: status=GATT_SUCCESS service="
+                                    + service.getUuid().toString());
+                } else {
+                    appendStatus("onServiceAdded: status!=GATT_SUCCESS");
+                    Log.d(TAG, "onServiceAdded: status!=GATT_SUCCESS");
+                }
+
+            }
+
+            @Override
+            public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
+                Log.d(TAG, "onCharacteristicReadRequest: requestId=" + requestId + " offset=" + offset);
+            }
+
+            @Override
+            public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+                Log.d(TAG, "onCharacteristicWriteRequest: requestId=" + requestId + " preparedWrite="
+                                + Boolean.toString(preparedWrite) + " responseNeeded="
+                                + Boolean.toString(responseNeeded) + " offset=" + offset);
+            }
+        };
+
         Log.d(TAG,getString(R.string.ble_initialized));
     }
 
@@ -159,7 +204,34 @@ public class MainActivity extends Activity {
         if(bTAdvertiser != null) {
             bTAdvertiser.stopAdvertising(advCallback);
             isAdvertised = false;
+            bTAdvertiser = null;
             appendStatus(getString(R.string.ble_stop_adv));
+        }
+    }
+
+    private void startGattServer() {
+        gattServer = getBTManager().openGattServer(this, gattCallback);
+
+        BluetoothGattService gs = new BluetoothGattService(
+            UUID.fromString("00001802-0000-1000-8000-00805f9b34fb"), BluetoothGattService.SERVICE_TYPE_PRIMARY
+        );
+
+        BluetoothGattCharacteristic gc = new BluetoothGattCharacteristic(
+            UUID.fromString("00002a06-0000-1000-8000-00805f9b34fb"), BluetoothGattCharacteristic.PROPERTY_READ,
+            BluetoothGattCharacteristic.PERMISSION_READ
+        );
+
+        gs.addCharacteristic(gc);
+        gattServer.addService(gs);
+    }
+
+
+    private void stopGattServer() {
+        if (gattServer != null) {
+            gattServer.clearServices();
+            gattServer.close();
+            gattServer = null;
+            appendStatus(getString(R.string.stop_gatt_server));
         }
     }
 
@@ -174,24 +246,11 @@ public class MainActivity extends Activity {
     }
 
     private static AdvertiseData createAdvData() {
-        // 某Beacon
-        /*
-        final byte[] manufacturerData = new byte[] {
-                (byte) 0x02, (byte) 0x15, // fix
-                // proximity uuid 01020304-0506-0708-1112-131415161718
-                (byte) 0xe2, (byte) 0xc5, (byte) 0x6d, (byte) 0xb5, // uuid
-                (byte) 0xdf, (byte) 0xfb, (byte) 0x48, (byte) 0xd2, // uuid
-                (byte) 0xb0, (byte) 0x60, (byte) 0xd0, (byte) 0xf5, // uuid
-                (byte) 0xa7, (byte) 0x10, (byte) 0x96, (byte) 0xe0, // uuid
-                (byte) 0x00, (byte) 0x01, // major 257
-                (byte) 0x00, (byte) 0x01, // minor 514
-                (byte) 0xc5 // Tx Power -59
-        };
-        */
         final byte[] manufacturerData = createManufactureData();
         AdvertiseData.Builder builder = new AdvertiseData.Builder()
                .setIncludeTxPowerLevel(false)
                .addManufacturerData(APPLE, manufacturerData);
+               //.addServiceUuid(ParcelUuid.fromString("00001802-0000-1000-8000-00805f9b34fb"));
         return builder.build();
     }
 

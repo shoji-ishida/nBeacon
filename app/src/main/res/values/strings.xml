@@ -10,5 +10,6 @@
     <string name="ble_initialized">BLE has been initialized.</string>
     <string name="ble_stop_adv">BLE advertisement stopped.</string>
     <string name="ble_start_adv">BLE advertisement started.</string>
+    <string name="stop_gatt_server">GATT server stopped.</string>
 
 </resources>
