@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothGattService;
@@ -55,6 +56,9 @@ public class MainActivity extends Activity {
     private BluetoothGattServer gattServer;
     private BluetoothGattServerCallback gattCallback;
     private boolean isAdvertised = false;
+
+    static final UUID service_uuid = UUID.fromString("00001802-0000-1000-8000-00805f9b34fb");
+    static final UUID characteristic_uuid = UUID.fromString("00002a06-0000-1000-8000-00805f9b34fb");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -177,6 +181,12 @@ public class MainActivity extends Activity {
             @Override
             public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
                 Log.d(TAG, "onCharacteristicReadRequest: requestId=" + requestId + " offset=" + offset);
+                Log.d(TAG, "uuid: " + characteristic.getUuid().toString());
+                if (characteristic.getUuid().equals(characteristic_uuid)) {
+                    Log.d(TAG, "reading characteristic");
+                    characteristic.setValue("This is a test. How long it can be?");
+                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, characteristic.getValue());
+                }
             }
 
             @Override
@@ -184,6 +194,26 @@ public class MainActivity extends Activity {
                 Log.d(TAG, "onCharacteristicWriteRequest: requestId=" + requestId + " preparedWrite="
                                 + Boolean.toString(preparedWrite) + " responseNeeded="
                                 + Boolean.toString(responseNeeded) + " offset=" + offset);
+            }
+
+            @Override
+            public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattDescriptor descriptor) {
+                Log.d(TAG, "onDescriptorReadRequest: ");
+            }
+
+            @Override
+            public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+                Log.d(TAG, "onDescriptorWriteRequest: ");
+            }
+
+            @Override
+            public void onExecuteWrite(BluetoothDevice device, int requestId, boolean execute) {
+                Log.d(TAG, "onExecuteWrite: ");
+            }
+
+            @Override
+            public void onNotificationSent(BluetoothDevice device, int status) {
+                Log.d(TAG, "onNotificationSent: ");
             }
         };
 
@@ -213,11 +243,11 @@ public class MainActivity extends Activity {
         gattServer = getBTManager().openGattServer(this, gattCallback);
 
         BluetoothGattService gs = new BluetoothGattService(
-            UUID.fromString("00001802-0000-1000-8000-00805f9b34fb"), BluetoothGattService.SERVICE_TYPE_PRIMARY
+            service_uuid, BluetoothGattService.SERVICE_TYPE_PRIMARY
         );
 
         BluetoothGattCharacteristic gc = new BluetoothGattCharacteristic(
-            UUID.fromString("00002a06-0000-1000-8000-00805f9b34fb"), BluetoothGattCharacteristic.PROPERTY_READ,
+            characteristic_uuid, BluetoothGattCharacteristic.PROPERTY_READ,
             BluetoothGattCharacteristic.PERMISSION_READ
         );
 
