@@ -46,6 +46,7 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
 import java.nio.ShortBuffer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -66,6 +67,7 @@ public class MainActivity extends Activity {
 
     static final UUID service_uuid = UUID.fromString("00001802-0000-1000-8000-00805f9b34fb");
     static final UUID characteristic_uuid = UUID.fromString("00002a06-0000-1000-8000-00805f9b34fb");
+    static final UUID characteristic_uuid2 = UUID.fromString("00002a06-0000-1000-8000-00805f9b34fb");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,24 +87,7 @@ public class MainActivity extends Activity {
         super.onStart();
 
         frag.editText.setText(R.string.initial_text);
-        /*
-        frag.editText.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-                Log.d(TAG, "beforeTextChanged: ");
-            }
 
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                Log.d(TAG, "onTextChanged: ");
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {
-                Log.d(TAG, "afterTextChanged: " + s.toString());
-            }
-        });
-        */
         frag.editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
@@ -113,23 +98,6 @@ public class MainActivity extends Activity {
                 return false;
             }
         });
-        /*
-        frag.editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-            @Override
-            public void onFocusChange(View v, boolean hasFocus) {
-                Log.d(TAG, "hasFocus=" + hasFocus);
-            }
-        });
-        */
-        /*
-        frag.editText.setOnKeyListener(new View.OnKeyListener() {
-            @Override
-            public boolean onKey(View v, int keyCode, KeyEvent event) {
-                Log.d(TAG, "keycode="+keyCode+event.toString());
-                return false;
-            }
-        });
-        */
         startAdvertise();
         startGattServer();
     }
@@ -334,8 +302,23 @@ public class MainActivity extends Activity {
         BluetoothGattService service = gattServer.getService(service_uuid);
         BluetoothGattCharacteristic characteristic = service.getCharacteristic(characteristic_uuid);
         characteristic.setValue(frag.editText.getText().toString());
+
+        List<BluetoothDevice> notifiedDevices = new ArrayList<BluetoothDevice>();
+
+        boolean alreadyNotifed = false;
         for (BluetoothDevice device : devices) {
+            for (BluetoothDevice notifiedDevice : notifiedDevices) {
+                Log.d(TAG, notifiedDevice.getAddress() + "vs," + device.getAddress());
+                if (notifiedDevice.getAddress().equals(device.getAddress())) {
+                    Log.d(TAG, "already notified: " + device);
+                    alreadyNotifed = true;
+                    break;
+                }
+            }
+            if (alreadyNotifed) continue;
             gattServer.notifyCharacteristicChanged(device, characteristic, false);
+            notifiedDevices.add(device);
+            alreadyNotifed = false;
         }
     }
 
