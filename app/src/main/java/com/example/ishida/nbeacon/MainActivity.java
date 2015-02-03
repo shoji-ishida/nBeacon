@@ -12,6 +12,7 @@ import android.bluetooth.BluetoothGattServer;
 import android.bluetooth.BluetoothGattServerCallback;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
@@ -20,13 +21,18 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.ParcelUuid;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.os.Build;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -40,6 +46,7 @@ import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
 import java.nio.ShortBuffer;
+import java.util.List;
 import java.util.UUID;
 
 
@@ -77,6 +84,52 @@ public class MainActivity extends Activity {
     protected void onStart() {
         super.onStart();
 
+        frag.editText.setText(R.string.initial_text);
+        /*
+        frag.editText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                Log.d(TAG, "beforeTextChanged: ");
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                Log.d(TAG, "onTextChanged: ");
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                Log.d(TAG, "afterTextChanged: " + s.toString());
+            }
+        });
+        */
+        frag.editText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+                Log.d(TAG, "aId=" + actionId + ", " + event);
+                if (actionId == EditorInfo.IME_ACTION_DONE) {
+                    notifyCharacteristicChanged();
+                }
+                return false;
+            }
+        });
+        /*
+        frag.editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                Log.d(TAG, "hasFocus=" + hasFocus);
+            }
+        });
+        */
+        /*
+        frag.editText.setOnKeyListener(new View.OnKeyListener() {
+            @Override
+            public boolean onKey(View v, int keyCode, KeyEvent event) {
+                Log.d(TAG, "keycode="+keyCode+event.toString());
+                return false;
+            }
+        });
+        */
         startAdvertise();
         startGattServer();
     }
@@ -184,7 +237,7 @@ public class MainActivity extends Activity {
                 Log.d(TAG, "uuid: " + characteristic.getUuid().toString());
                 if (characteristic.getUuid().equals(characteristic_uuid)) {
                     Log.d(TAG, "reading characteristic");
-                    characteristic.setValue("This is a test. How long it can be?");
+                    characteristic.setValue(frag.editText.getText().toString());
                     gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, characteristic.getValue());
                 }
             }
@@ -213,7 +266,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onNotificationSent(BluetoothDevice device, int status) {
-                Log.d(TAG, "onNotificationSent: ");
+                Log.d(TAG, "onNotificationSent: " + device);
             }
         };
 
@@ -247,7 +300,7 @@ public class MainActivity extends Activity {
         );
 
         BluetoothGattCharacteristic gc = new BluetoothGattCharacteristic(
-            characteristic_uuid, BluetoothGattCharacteristic.PROPERTY_READ,
+            characteristic_uuid, BluetoothGattCharacteristic.PROPERTY_READ|BluetoothGattCharacteristic.PROPERTY_NOTIFY,
             BluetoothGattCharacteristic.PERMISSION_READ
         );
 
@@ -273,6 +326,17 @@ public class MainActivity extends Activity {
     /** get BluetoothManager */
     public BluetoothManager getBTManager() {
         return (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+    }
+
+    public void notifyCharacteristicChanged() {
+        List<BluetoothDevice> devices = getBTManager().getConnectedDevices(BluetoothProfile.GATT_SERVER);
+        if (devices.isEmpty()) return;
+        BluetoothGattService service = gattServer.getService(service_uuid);
+        BluetoothGattCharacteristic characteristic = service.getCharacteristic(characteristic_uuid);
+        characteristic.setValue(frag.editText.getText().toString());
+        for (BluetoothDevice device : devices) {
+            gattServer.notifyCharacteristicChanged(device, characteristic, false);
+        }
     }
 
     private static AdvertiseData createAdvData() {
@@ -314,6 +378,8 @@ public class MainActivity extends Activity {
     public static class PlaceholderFragment extends Fragment {
 
         TextView textview;
+        EditText editText;
+
         public PlaceholderFragment() {
         }
 
@@ -322,6 +388,7 @@ public class MainActivity extends Activity {
                                  Bundle savedInstanceState) {
             View rootView = inflater.inflate(R.layout.fragment_main, container, false);
             textview = (TextView)rootView.findViewById(R.id.text);
+            editText = (EditText)rootView.findViewById(R.id.editText);
             return rootView;
         }
 
@@ -329,5 +396,7 @@ public class MainActivity extends Activity {
             String current = textview.getText().toString();
             textview.setText(current + "\n" + status);
         }
+
+
     }
 }
