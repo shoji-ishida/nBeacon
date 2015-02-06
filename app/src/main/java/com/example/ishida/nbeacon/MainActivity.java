@@ -31,6 +31,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.os.Build;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -64,10 +65,11 @@ public class MainActivity extends Activity {
     private BluetoothGattServer gattServer;
     private BluetoothGattServerCallback gattCallback;
     private boolean isAdvertised = false;
+    private List<BluetoothDevice> managedDevices = new ArrayList<BluetoothDevice>();
 
     static final UUID service_uuid = UUID.fromString("00001802-0000-1000-8000-00805f9b34fb");
     static final UUID characteristic_uuid = UUID.fromString("00002a06-0000-1000-8000-00805f9b34fb");
-    static final UUID characteristic_uuid2 = UUID.fromString("00002a06-0000-1000-8000-00805f9b34fb");
+    static final UUID characteristic_uuid2 = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,6 +81,7 @@ public class MainActivity extends Activity {
                     .add(R.id.container, frag)
                     .commit();
         }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         init();
     }
 
@@ -127,6 +130,7 @@ public class MainActivity extends Activity {
 
         //noinspection SimplifiableIfStatement
         if (id == R.id.action_settings) {
+            notifyCharacteristicChanged();
             return true;
         }
 
@@ -182,7 +186,15 @@ public class MainActivity extends Activity {
         gattCallback = new BluetoothGattServerCallback() {
             @Override
             public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
-                Log.d(TAG, "onConnectionStateChange: status=" + status + "->" + newState);
+                Log.d(TAG, "onConnectionStateChange: " + device.getName() + " status=" + status + "->" + newState);
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    if(!managedDevices.contains(device) && (!device.getAddress().equals(bTAdapter.getAddress()))) {
+                        managedDevices.add(device);
+                    }
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                        managedDevices.remove(device);
+                }
+
             }
 
             @Override
@@ -204,8 +216,12 @@ public class MainActivity extends Activity {
                 Log.d(TAG, "onCharacteristicReadRequest: requestId=" + requestId + " offset=" + offset);
                 Log.d(TAG, "uuid: " + characteristic.getUuid().toString());
                 if (characteristic.getUuid().equals(characteristic_uuid)) {
-                    Log.d(TAG, "reading characteristic");
+                    Log.d(TAG, device.getName() + " is reading characteristic 1");
                     characteristic.setValue(frag.editText.getText().toString());
+                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, characteristic.getValue());
+                } else if (characteristic.getUuid().equals(characteristic_uuid2)) {
+                    Log.d(TAG, device.getName() + " is reading characteristic 2");
+                    characteristic.setValue("Meow");
                     gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, characteristic.getValue());
                 }
             }
@@ -215,6 +231,18 @@ public class MainActivity extends Activity {
                 Log.d(TAG, "onCharacteristicWriteRequest: requestId=" + requestId + " preparedWrite="
                                 + Boolean.toString(preparedWrite) + " responseNeeded="
                                 + Boolean.toString(responseNeeded) + " offset=" + offset);
+                if (characteristic.getUuid().equals(characteristic_uuid2)) {
+                    Log.d(TAG, device.getName() + " is writing characteristic");
+                    if (value != null && value.length > 0) {
+                        String str = new String(value);
+                        Log.d(TAG, "data: " + str);
+                        appendStatus(str);
+                    } else {
+                        Log.d(TAG, "Invalid value.");
+                    }
+                    gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, null);
+
+                }
             }
 
             @Override
@@ -234,7 +262,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onNotificationSent(BluetoothDevice device, int status) {
-                Log.d(TAG, "onNotificationSent: " + device);
+                Log.d(TAG, "onNotificationSent: " + device.getName());
             }
         };
 
@@ -272,7 +300,13 @@ public class MainActivity extends Activity {
             BluetoothGattCharacteristic.PERMISSION_READ
         );
 
+        BluetoothGattCharacteristic gc2 = new BluetoothGattCharacteristic(
+            characteristic_uuid2, BluetoothGattCharacteristic.PROPERTY_READ|BluetoothGattCharacteristic.PROPERTY_WRITE,
+            BluetoothGattCharacteristic.PERMISSION_READ|BluetoothGattCharacteristic.PERMISSION_WRITE
+        );
+
         gs.addCharacteristic(gc);
+        gs.addCharacteristic(gc2);
         gattServer.addService(gs);
     }
 
@@ -297,28 +331,15 @@ public class MainActivity extends Activity {
     }
 
     public void notifyCharacteristicChanged() {
-        List<BluetoothDevice> devices = getBTManager().getConnectedDevices(BluetoothProfile.GATT_SERVER);
-        if (devices.isEmpty()) return;
+        if (managedDevices.isEmpty()) return;
         BluetoothGattService service = gattServer.getService(service_uuid);
         BluetoothGattCharacteristic characteristic = service.getCharacteristic(characteristic_uuid);
         characteristic.setValue(frag.editText.getText().toString());
 
-        List<BluetoothDevice> notifiedDevices = new ArrayList<BluetoothDevice>();
 
-        boolean alreadyNotifed = false;
-        for (BluetoothDevice device : devices) {
-            for (BluetoothDevice notifiedDevice : notifiedDevices) {
-                Log.d(TAG, notifiedDevice.getAddress() + "vs," + device.getAddress());
-                if (notifiedDevice.getAddress().equals(device.getAddress())) {
-                    Log.d(TAG, "already notified: " + device);
-                    alreadyNotifed = true;
-                    break;
-                }
-            }
-            if (alreadyNotifed) continue;
+        for (BluetoothDevice device : managedDevices) {
+            Log.d(TAG, "Going to notify to " + device.getName());
             gattServer.notifyCharacteristicChanged(device, characteristic, false);
-            notifiedDevices.add(device);
-            alreadyNotifed = false;
         }
     }
 
@@ -335,25 +356,31 @@ public class MainActivity extends Activity {
         AdvertiseSettings.Builder builder = new AdvertiseSettings.Builder()
              .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
              .setConnectable(true)
-             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_POWER);
+             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED);
         return builder.build();
     }
 
     private static byte[] createManufactureData() {
         ByteBuffer bb = ByteBuffer.allocate(23);
 
-            bb.putShort((short) 0x0215);
+            bb.putShort((short) 0x0215); //iBeacon
             bb.putLong(uuid.getMostSignificantBits());
             bb.putLong(uuid.getLeastSignificantBits());
-            bb.putShort((short) 0x0001);
-            bb.putShort((short) 0x0001);
-            bb.put((byte) 0xc5);
+            bb.putShort((short) 0x0001); //major
+            bb.putShort((short) 0x0001); //minor
+            bb.put((byte) 0xc5); //Tx Power
 
         return bb.array();
     }
 
-    public void appendStatus(String status) {
-        frag.appendStatus(status);
+    public void appendStatus(final String status) {
+
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                frag.appendStatus(status);
+            }
+        });
     }
     /**
      * A placeholder fragment containing a simple view.
